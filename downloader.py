@@ -10,7 +10,7 @@ def get_function_name(): return inspect.stack()[1][3]
 def get_project_path():
     print("[setup_project]")
     document_path = os.path.expanduser('~/Documents')
-    project_path = f"{document_path}/youtube-music"
+    project_path = f"{document_path}/youtube-scripts"
     os.makedirs(project_path, exist_ok=True)
     return project_path
 
