@@ -1,24 +1,17 @@
 import bookmarks_parser
 import youtube_dl
-import inspect
-import os
 
 
-def get_function_name(): return inspect.stack()[1][3]
-
-
-def get_project_path():
-    print("[setup_project]")
-    document_path = os.path.expanduser('~/Documents')
-    project_path = f"{document_path}/youtube-scripts"
-    os.makedirs(project_path, exist_ok=True)
-    return project_path
+from utils import (
+    get_function_name,
+    get_downloader_path,
+)
 
 
 class Downloader():
 
     def __init__(self):
-        self.project = get_project_path()
+        self.project = get_downloader_path()
 
     def parse_bookmarks(self, bookmarks_file, bookmarks_folder):
         print(f"[{get_function_name()}] parsing", bookmarks_file)
@@ -61,12 +54,3 @@ class Downloader():
             self.download_mp3_from_url(bookmark["url"])
 
         print(f"[{get_function_name()}] finished downloads")
-
-
-if __name__ == "__main__":
-
-    bookmarks_file = 'bookmarks_28.03.22.html'
-    bookmarks_folder = 'music'
-
-    dl = Downloader()
-    dl.download_mp3_from_bookmarks(bookmarks_file, bookmarks_folder)
