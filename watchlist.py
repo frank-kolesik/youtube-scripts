@@ -35,13 +35,13 @@ class Watchlist():
         con = sqlite3.connect(self.database_path)
         cursor = con.cursor()
 
-        cursor.execute('''CREATE TABLE IF NOT EXISTS "channels" (
+        cursor.execute('''CREATE TABLE IF NOT EXISTS channels (
             channelId VARCHAR(50) NOT NULL,
             channelName VARCHAR(50) NOT NULL,
             playlistId VARCHAR(50) NOT NULL,
             PRIMARY KEY (channelId)
         )''')
-        cursor.execute('''CREATE TABLE IF NOT EXISTS "history" (
+        cursor.execute('''CREATE TABLE IF NOT EXISTS history (
             id INTEGER,
             videoId VARCHAR(50) NOT NULL,
             videoPublished VARCHAR(50) NOT NULL,
@@ -80,62 +80,84 @@ class Watchlist():
 
     def get_channels_by_channel_name(self, channel_name):
         print(f"[{get_function_name()}]", channel_name)
-        response = self.youtube.search().list(
-            part="snippet",
-            type="channel",
-            q=channel_name,
-        ).execute()
+        try:
+            response = self.youtube.search().list(
+                part="snippet",
+                type="channel",
+                q=channel_name,
+            ).execute()
 
-        channels = [{
-            "id": item["snippet"]["channelId"],
-            "name": item["snippet"]["channelTitle"],
-            "description": item["snippet"]["description"],
-            "image": item["snippet"]["thumbnails"]["default"],
-        } for item in response["items"]]
+            channels = [{
+                "id": item["snippet"]["channelId"],
+                "name": item["snippet"]["channelTitle"],
+                "description": item["snippet"]["description"],
+                "image": item["snippet"]["thumbnails"]["default"],
+            } for item in response["items"]]
 
-        return channels
+            return channels
+        except:
+            return []
 
     def get_uploads_id_by_channel_id(self, channel_id):
         print(f"[{get_function_name()}]", channel_id)
-        response = self.youtube.channels().list(
-            part="contentDetails",
-            id=channel_id,
-        ).execute()
+        try:
+            response = self.youtube.channels().list(
+                part="contentDetails",
+                id=channel_id,
+            ).execute()
 
-        uploads_id = response["items"][0]["contentDetails"]["relatedPlaylists"]["uploads"]
+            uploads_id = response["items"][0]["contentDetails"]["relatedPlaylists"]["uploads"]
 
-        return uploads_id
+            return uploads_id
+        except:
+            return None
 
     def get_uploads_by_uploads_id(self, uploads_id):
         print(f"[{get_function_name()}]", uploads_id)
-        response = self.youtube.playlistItems().list(
-            part="contentDetails",
-            playlistId=uploads_id,
-        ).execute()
+        try:
+            response = self.youtube.playlistItems().list(
+                part="contentDetails",
+                playlistId=uploads_id,
+            ).execute()
 
-        recent_videos = [{
-            "id": item["contentDetails"]["videoId"],
-            "published": item["contentDetails"]["videoPublishedAt"],
-        } for item in response["items"]]
+            recent_videos = [{
+                "id": item["contentDetails"]["videoId"],
+                "published": item["contentDetails"]["videoPublishedAt"],
+            } for item in response["items"]]
 
-        return recent_videos
+            return recent_videos
+        except:
+            return []
 
     def add_to_playlist_by_video_id(self, video_id):
         print(f"[{get_function_name()}]", video_id)
-        response = self.youtube.playlistItems().insert(
-            part="snippet",
-            body={
-                "snippet": {
-                    "playlistId": self.watchlist_id,
-                    "resourceId": {
-                        "kind": "youtube#video",
-                        "videoId": video_id,
+        try:
+            self.youtube.playlistItems().insert(
+                part="snippet",
+                body={
+                    "snippet": {
+                        "playlistId": self.watchlist_id,
+                        "resourceId": {
+                            "kind": "youtube#video",
+                            "videoId": video_id,
+                        }
                     }
                 }
-            }
-        ).execute()
+            ).execute()
+            return True
+        except:
+            return False
 
-        print(response)
+    def read_all_channels_from_database(self):
+        con = sqlite3.connect(self.database_path)
+        cursor = con.cursor()
+
+        cursor.execute('''SELECT * FROM channels''')
+
+        results = cursor.fetchall()
+        con.close()
+
+        return results
 
     def read_channels_from_database(self, channel_name):
         con = sqlite3.connect(self.database_path)
@@ -175,6 +197,7 @@ class Watchlist():
         print(f"[{get_function_name()}]", channel_name)
         channels = self.read_channels_from_database(channel_name)
         if channels:
+            print(f"[{get_function_name()}] database", channel_name)
             for num, (channel_id, channel_name, _) in enumerate(channels):
                 output = f"[{channel_name}] https://www.youtube.com/channel/{channel_id}"
                 print(num, output)
@@ -213,3 +236,39 @@ class Watchlist():
         playlist_id = self.get_uploads_id_by_channel_id(channel_id)
 
         self.write_channel_to_database(channel_id, channel_name, playlist_id)
+
+    def add_videos_to_watchlist(self):
+        print(f"[{get_function_name()}] started")
+        con = sqlite3.connect(self.database_path)
+        cursor = con.cursor()
+        channels = self.read_all_channels_from_database()
+
+        for _, _, playlist_id in channels:
+            uploads = self.get_uploads_by_uploads_id(playlist_id)
+            for upload in uploads:
+                video_id = upload["id"]
+                video_published = upload["published"][:10]
+
+                cursor.execute('''SELECT * FROM history
+                    WHERE videoId = "%s"
+                ''' % video_id)
+
+                if cursor.fetchone() is not None:
+                    print(f"[{get_function_name()}] video already added")
+                    continue
+
+                added = self.add_to_playlist_by_video_id(video_id)
+
+                if not added:
+                    print(f"[{get_function_name()}] error: video not added")
+                    continue
+
+                print(f"[{get_function_name()}] video added to watchlist & db")
+                cursor.execute('''INSERT INTO history
+                    (videoId, videoPublished)
+                    VALUES ("%s", "%s")
+                ''' % (video_id, video_published))
+
+        con.commit()
+        con.close()
+        print(f"[{get_function_name()}] finished")
