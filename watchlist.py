@@ -176,10 +176,20 @@ class Watchlist():
         con = sqlite3.connect(self.database_path)
         cursor = con.cursor()
 
-        cursor.execute('''INSERT INTO channels
-            (channelId, channelName, playlistId)
-            VALUES ("%s", "%s", "%s")
-        ''' % (channel_id, channel_name, playlist_id))
+        cursor.execute('''SELECT * FROM channels
+            WHERE channelId = "%s"
+        ''' % channel_id)
+
+        if cursor.fetchone():
+            cursor.execute('''UPDATE channels
+                SET channelName = "%s", playlistId = "%s"
+                WHERE channelId = "%s"
+            ''' % (channel_name, playlist_id, channel_id))
+        else:
+            cursor.execute('''INSERT INTO channels
+                (channelId, channelName, playlistId)
+                VALUES ("%s", "%s", "%s")
+            ''' % (channel_id, channel_name, playlist_id))
 
         con.commit()
         con.close()
