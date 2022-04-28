@@ -58,6 +58,15 @@ class Watchlist():
             with open(self.client_token_path, "rb") as f:
                 credentials = pickle.load(f)
 
+        # CREDENTIALS.REFRESH ONLY WORKS IF APP IS VERIFIED ?!
+        # WORKAROUND IF CREDENTIALS NEED TO BE REFRESHED
+        if (credentials
+            and not credentials.valid
+            and credentials.expired
+            and credentials.refresh_token
+            ):
+            credentials = None
+
         if not credentials or not credentials.valid:
             if credentials and credentials.expired and credentials.refresh_token:
                 print(f"[{get_function_name()}] Refreshing credentials")
