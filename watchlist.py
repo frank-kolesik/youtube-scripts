@@ -1,5 +1,6 @@
 from google_auth_oauthlib.flow import InstalledAppFlow
 from google.auth.transport.requests import Request
+from google.auth.exceptions import RefreshError
 from googleapiclient.discovery import build
 import sqlite3
 import pickle
@@ -12,7 +13,7 @@ from utils import (
 )
 
 
-class Watchlist():
+class Watchlist:
     SCOPES = [
         "https://www.googleapis.com/auth/youtube.readonly",
         "https://www.googleapis.com/auth/youtube.force-ssl",
@@ -35,18 +36,22 @@ class Watchlist():
         con = sqlite3.connect(self.database_path)
         cursor = con.cursor()
 
-        cursor.execute('''CREATE TABLE IF NOT EXISTS channels (
+        cursor.execute(
+            """CREATE TABLE IF NOT EXISTS channels (
             channelId VARCHAR(50) NOT NULL,
             channelName VARCHAR(50) NOT NULL,
             playlistId VARCHAR(50) NOT NULL,
             PRIMARY KEY (channelId)
-        )''')
-        cursor.execute('''CREATE TABLE IF NOT EXISTS history (
+        )"""
+        )
+        cursor.execute(
+            """CREATE TABLE IF NOT EXISTS history (
             id INTEGER,
             videoId VARCHAR(50) NOT NULL,
             videoPublished VARCHAR(50) NOT NULL,
             PRIMARY KEY (id)
-        )''')
+        )"""
+        )
 
         con.close()
 
@@ -58,25 +63,20 @@ class Watchlist():
             with open(self.client_token_path, "rb") as f:
                 credentials = pickle.load(f)
 
-        # CREDENTIALS.REFRESH ONLY WORKS IF APP IS VERIFIED ?!
-        # WORKAROUND IF CREDENTIALS NEED TO BE REFRESHED
-        if (credentials
-            and not credentials.valid
-            and credentials.expired
-            and credentials.refresh_token
-            ):
-            credentials = None
-
         if not credentials or not credentials.valid:
             if credentials and credentials.expired and credentials.refresh_token:
                 print(f"[{get_function_name()}] Refreshing credentials")
-                credentials.refresh(Request())
+                try:
+                    credentials.refresh(Request())
+                except RefreshError:
+                    os.remove(self.client_token_path)
+                    return self.prepare_api()
             else:
                 print(f"[{get_function_name()}] Getting credentials")
                 os.environ["OAUTHLIB_INSECURE_TRANSPORT"] = "1"
                 credentials = InstalledAppFlow.from_client_secrets_file(
                     self.client_secret_path, self.SCOPES
-                ).run_console()
+                ).run_local_server()
             print(f"[{get_function_name()}] Saving credentials")
             with open(self.client_token_path, "wb") as f:
                 pickle.dump(credentials, f)
@@ -90,18 +90,25 @@ class Watchlist():
     def get_channels_by_channel_name(self, channel_name):
         print(f"[{get_function_name()}]", channel_name)
         try:
-            response = self.youtube.search().list(
-                part="snippet",
-                type="channel",
-                q=channel_name,
-            ).execute()
+            response = (
+                self.youtube.search()
+                .list(
+                    part="snippet",
+                    type="channel",
+                    q=channel_name,
+                )
+                .execute()
+            )
 
-            channels = [{
-                "id": item["snippet"]["channelId"],
-                "name": item["snippet"]["channelTitle"],
-                "description": item["snippet"]["description"],
-                "image": item["snippet"]["thumbnails"]["default"],
-            } for item in response["items"]]
+            channels = [
+                {
+                    "id": item["snippet"]["channelId"],
+                    "name": item["snippet"]["channelTitle"],
+                    "description": item["snippet"]["description"],
+                    "image": item["snippet"]["thumbnails"]["default"],
+                }
+                for item in response["items"]
+            ]
 
             return channels
         except:
@@ -110,12 +117,18 @@ class Watchlist():
     def get_uploads_id_by_channel_id(self, channel_id):
         print(f"[{get_function_name()}]", channel_id)
         try:
-            response = self.youtube.channels().list(
-                part="contentDetails",
-                id=channel_id,
-            ).execute()
+            response = (
+                self.youtube.channels()
+                .list(
+                    part="contentDetails",
+                    id=channel_id,
+                )
+                .execute()
+            )
 
-            uploads_id = response["items"][0]["contentDetails"]["relatedPlaylists"]["uploads"]
+            uploads_id = response["items"][0]["contentDetails"]["relatedPlaylists"][
+                "uploads"
+            ]
 
             return uploads_id
         except:
@@ -124,15 +137,22 @@ class Watchlist():
     def get_uploads_by_uploads_id(self, uploads_id):
         print(f"[{get_function_name()}]", uploads_id)
         try:
-            response = self.youtube.playlistItems().list(
-                part="contentDetails",
-                playlistId=uploads_id,
-            ).execute()
+            response = (
+                self.youtube.playlistItems()
+                .list(
+                    part="contentDetails",
+                    playlistId=uploads_id,
+                )
+                .execute()
+            )
 
-            recent_videos = [{
-                "id": item["contentDetails"]["videoId"],
-                "published": item["contentDetails"]["videoPublishedAt"],
-            } for item in response["items"]]
+            recent_videos = [
+                {
+                    "id": item["contentDetails"]["videoId"],
+                    "published": item["contentDetails"]["videoPublishedAt"],
+                }
+                for item in response["items"]
+            ]
 
             return recent_videos
         except:
@@ -149,9 +169,9 @@ class Watchlist():
                         "resourceId": {
                             "kind": "youtube#video",
                             "videoId": video_id,
-                        }
+                        },
                     }
-                }
+                },
             ).execute()
             return True
         except:
@@ -161,7 +181,7 @@ class Watchlist():
         con = sqlite3.connect(self.database_path)
         cursor = con.cursor()
 
-        cursor.execute('''SELECT * FROM channels''')
+        cursor.execute("""SELECT * FROM channels""")
 
         results = cursor.fetchall()
         con.close()
@@ -172,9 +192,12 @@ class Watchlist():
         con = sqlite3.connect(self.database_path)
         cursor = con.cursor()
 
-        cursor.execute('''SELECT * FROM channels
+        cursor.execute(
+            """SELECT * FROM channels
             WHERE channelName LIKE "%s"
-        ''' % channel_name)
+        """
+            % channel_name
+        )
 
         results = cursor.fetchall()
         con.close()
@@ -185,20 +208,29 @@ class Watchlist():
         con = sqlite3.connect(self.database_path)
         cursor = con.cursor()
 
-        cursor.execute('''SELECT * FROM channels
+        cursor.execute(
+            """SELECT * FROM channels
             WHERE channelId = "%s"
-        ''' % channel_id)
+        """
+            % channel_id
+        )
 
         if cursor.fetchone():
-            cursor.execute('''UPDATE channels
+            cursor.execute(
+                """UPDATE channels
                 SET channelName = "%s", playlistId = "%s"
                 WHERE channelId = "%s"
-            ''' % (channel_name, playlist_id, channel_id))
+            """
+                % (channel_name, playlist_id, channel_id)
+            )
         else:
-            cursor.execute('''INSERT INTO channels
+            cursor.execute(
+                """INSERT INTO channels
                 (channelId, channelName, playlistId)
                 VALUES ("%s", "%s", "%s")
-            ''' % (channel_id, channel_name, playlist_id))
+            """
+                % (channel_id, channel_name, playlist_id)
+            )
 
         con.commit()
         con.close()
@@ -218,7 +250,9 @@ class Watchlist():
         if channels:
             print(f"[{get_function_name()}] database", channel_name)
             for num, (channel_id, channel_name, _) in enumerate(channels):
-                output = f"[{channel_name}] https://www.youtube.com/channel/{channel_id}"
+                output = (
+                    f"[{channel_name}] https://www.youtube.com/channel/{channel_id}"
+                )
                 print(num, output)
 
             num += 1
@@ -268,9 +302,12 @@ class Watchlist():
                 video_id = upload["id"]
                 video_published = upload["published"][:10]
 
-                cursor.execute('''SELECT * FROM history
+                cursor.execute(
+                    """SELECT * FROM history
                     WHERE videoId = "%s"
-                ''' % video_id)
+                """
+                    % video_id
+                )
 
                 if cursor.fetchone() is not None:
                     print(f"[{get_function_name()}] video already added")
@@ -283,10 +320,13 @@ class Watchlist():
                     continue
 
                 print(f"[{get_function_name()}] video added to watchlist & db")
-                cursor.execute('''INSERT INTO history
+                cursor.execute(
+                    """INSERT INTO history
                     (videoId, videoPublished)
                     VALUES ("%s", "%s")
-                ''' % (video_id, video_published))
+                """
+                    % (video_id, video_published)
+                )
 
         con.commit()
         con.close()
